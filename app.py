@@ -1,14 +1,25 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import pickle
 import numpy as np
 import os
-import traceback
 
 app = FastAPI()
 
 # =========================
-# Caminho base do projeto
+# CORS (ESSENCIAL pro frontend)
+# =========================
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # depois pode restringir
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# =========================
+# Caminho base
 # =========================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -23,16 +34,16 @@ except Exception as e:
     model = None
 
 # =========================
-# Carregar scaler (opcional)
+# Carregar scaler
 # =========================
 try:
     with open(os.path.join(BASE_DIR, "scaler.pkl"), "rb") as f:
         scaler = pickle.load(f)
 except:
-    scaler = None  # se não tiver scaler, continua sem ele
+    scaler = None
 
 # =========================
-# Schema de entrada (validação)
+# Entrada
 # =========================
 class DiabetesInput(BaseModel):
     Pregnancies: float
@@ -45,7 +56,14 @@ class DiabetesInput(BaseModel):
     Age: float
 
 # =========================
-# Rota inicial
+# Saída (IMPORTANTE)
+# =========================
+class PredictionOutput(BaseModel):
+    resultado: int
+    diagnostico: str
+
+# =========================
+# Home
 # =========================
 @app.get("/")
 def home():
@@ -54,12 +72,12 @@ def home():
 # =========================
 # Predição
 # =========================
-@app.post("/predict")
+@app.post("/predict", response_model=PredictionOutput)
 def predict(data: DiabetesInput):
-    try:
-        if model is None:
-            return {"erro": "Modelo não carregado"}
+    if model is None:
+        raise HTTPException(status_code=500, detail="Modelo não carregado")
 
+    try:
         values = [
             data.Pregnancies,
             data.Glucose,
@@ -73,7 +91,6 @@ def predict(data: DiabetesInput):
 
         input_data = np.array(values).reshape(1, -1)
 
-        # aplica scaler se existir
         if scaler is not None:
             input_data = scaler.transform(input_data)
 
@@ -85,7 +102,4 @@ def predict(data: DiabetesInput):
         }
 
     except Exception as e:
-        return {
-            "erro": str(e),
-            "trace": traceback.format_exc()
-        }
+        raise HTTPException(status_code=500, detail=str(e))
